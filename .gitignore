@@ -1,0 +1,10 @@
+# Local Supabase config - do not commit real keys
+supabase-config.js
+.env
+.env.local
+.env.*.local
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
