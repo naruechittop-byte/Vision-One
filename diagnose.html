@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vision One Diagnostics</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root{--navy:#071A2F;--ivory:#F6F3EE;--line:#D8D3CB;--gray:#77726c;--green:#3F7D58;--red:#A54A4A;--yellow:#B9892B;--shadow:0 18px 45px rgba(7,26,47,.08);--r:20px}*{box-sizing:border-box}body{margin:0;font-family:Inter,"Segoe UI",Tahoma,sans-serif;background:linear-gradient(135deg,#f7f3ed,#fbfaf7 50%,#ece7df);color:#2E2E2E;line-height:1.6}.wrap{width:min(1040px,calc(100% - 32px));margin:32px auto}.hero{background:rgba(255,255,255,.8);border:1px solid var(--line);border-radius:28px;padding:24px;box-shadow:var(--shadow);margin-bottom:18px}.hero h1{margin:0;color:var(--navy);font-family:Georgia,serif;font-size:34px}.hero p{margin:8px 0 0;color:var(--gray)}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.card{background:rgba(255,255,255,.78);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:18px}.card h3{margin:0 0 6px;color:var(--navy);font-family:Georgia,serif}.status{display:inline-flex;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:900;margin-bottom:10px}.ok{background:#E6F2EA;color:#2f6948}.bad{background:#F6E4E4;color:#934141}.warn{background:#F7EEDB;color:#8c641b}.muted{color:var(--gray);font-size:13px}.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:#fff;border:1px solid var(--line);padding:12px;border-radius:14px;overflow:auto;white-space:pre-wrap}button{border:0;border-radius:14px;padding:11px 15px;background:var(--navy);color:#fff;font-weight:800;cursor:pointer;box-shadow:0 12px 22px rgba(7,26,47,.13)}table{width:100%;border-collapse:separate;border-spacing:0 8px}td,th{text-align:left;background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:10px;font-size:14px}td:first-child,th:first-child{border-left:1px solid var(--line);border-radius:12px 0 0 12px}td:last-child,th:last-child{border-right:1px solid var(--line);border-radius:0 12px 12px 0}.full{grid-column:1/-1}@media(max-width:780px){.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>Vision One Diagnostics</h1>
+      <p>หน้านี้ใช้เช็กว่า Netlify ต่อ Supabase ได้ไหม, ENV ครบไหม, ตารางถูกสร้างหรือยัง, และมีข้อมูล demo หรือยัง</p>
+      <p><button onclick="runAll()">Run diagnostics</button> <a href="/" style="margin-left:10px;color:#071A2F;font-weight:800">กลับหน้าแอป</a></p>
+    </div>
+    <div class="grid">
+      <div class="card"><h3>1) Netlify Function</h3><div id="configStatus" class="status warn">WAITING</div><div id="configDetail" class="muted">ยังไม่ได้ทดสอบ</div></div>
+      <div class="card"><h3>2) Supabase Connection</h3><div id="connStatus" class="status warn">WAITING</div><div id="connDetail" class="muted">ยังไม่ได้ทดสอบ</div></div>
+      <div class="card full"><h3>3) Table Check</h3><div id="tableStatus" class="status warn">WAITING</div><div id="tableDetail"></div></div>
+      <div class="card full"><h3>สิ่งที่ต้องแก้ตามผลลัพธ์</h3><div id="advice" class="code">กด Run diagnostics ก่อน</div></div>
+    </div>
+  </div>
+<script>
+const tables=['patients','doctors','services','appointments','visits','drugs','invoices','payments','patient_packages'];
+function setBox(id,status,text){const el=document.getElementById(id+'Status');const detail=document.getElementById(id+'Detail');el.className='status '+(status==='ok'?'ok':status==='bad'?'bad':'warn');el.textContent=status.toUpperCase();detail.innerHTML=text}
+function esc(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+async function runAll(){
+  let cfg=null, sb=null, advice=[];
+  try{
+    const r=await fetch('/.netlify/functions/config',{cache:'no-store'});
+    const text=await r.text();
+    try{cfg=JSON.parse(text)}catch(e){throw new Error('Config function did not return JSON: '+text.slice(0,160))}
+    if(!cfg.ok){throw new Error(cfg.message||'Missing ENV')}
+    setBox('config','ok','เจอ Netlify Function และ ENV ครบแล้ว');
+  }catch(e){
+    setBox('config','bad',esc(e.message));
+    setBox('conn','bad','ยังต่อ Supabase ไม่ได้ เพราะ config ยังไม่ผ่าน');
+    tableStatus.className='status bad';tableStatus.textContent='BAD';tableDetail.innerHTML='<div class="muted">ยังเช็กตารางไม่ได้</div>';
+    adviceEl('ให้เข้า Netlify → Site configuration → Environment variables แล้วเพิ่ม SUPABASE_URL และ SUPABASE_ANON_KEY จากนั้น Trigger deploy ใหม่');
+    return;
+  }
+  try{
+    sb=supabase.createClient(cfg.supabaseUrl,cfg.supabaseAnonKey);
+    const {error}=await sb.from('patients').select('id',{count:'exact',head:true});
+    if(error) throw error;
+    setBox('conn','ok','ต่อ Supabase ได้แล้ว และ query ตาราง patients ได้');
+  }catch(e){
+    setBox('conn','bad',esc(e.message));
+    advice.push('ถ้า error เป็น relation "patients" does not exist = ยังไม่ได้รัน supabase/schema.sql ใน Supabase SQL Editor');
+    advice.push('ถ้า error เป็น permission denied / RLS = policy ยังไม่ถูกต้อง หรือรัน production RLS ก่อนตั้ง staff role');
+  }
+  const rows=[]; let allOk=true, hasData=false;
+  for(const t of tables){
+    try{
+      const {count,error}=await sb.from(t).select('*',{count:'exact',head:true});
+      if(error) throw error;
+      rows.push([t,'OK',count??0]);
+      if((count??0)>0) hasData=true;
+    }catch(e){
+      allOk=false; rows.push([t,'ERROR',e.message]);
+    }
+  }
+  tableStatus.className='status '+(allOk?'ok':'bad'); tableStatus.textContent=allOk?'OK':'BAD';
+  tableDetail.innerHTML='<table><thead><tr><th>Table</th><th>Status</th><th>Count / Error</th></tr></thead><tbody>'+rows.map(r=>`<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td><td>${esc(r[2])}</td></tr>`).join('')+'</tbody></table>';
+  if(!allOk) advice.push('มีตาราง ERROR: ให้รัน supabase/schema.sql ใน Supabase SQL Editor ก่อน');
+  if(allOk && !hasData) advice.push('ตารางมีแล้วแต่ยังไม่มีข้อมูล: ให้รัน supabase/seed.sql ใน Supabase SQL Editor');
+  if(allOk && hasData) advice.push('ฐานข้อมูลพร้อมแล้ว ถ้าหน้าแอปยังไม่ขึ้น ให้กด Hard refresh หรือ Trigger deploy ใหม่ใน Netlify');
+  adviceEl(advice.join('\n'));
+}
+function adviceEl(text){document.getElementById('advice').textContent=text||'ไม่พบปัญหาหลัก'}
+runAll();
+</script>
+</body>
+</html>
