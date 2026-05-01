@@ -1,6 +1,6 @@
 -- Vision One EMR Pro - Supabase schema
 -- Run this file in Supabase SQL Editor.
--- Designed for clinic operations: patients, appointments, visits, drugs, invoices, payments, packages, audit logs.
+-- Designed for clinic operations: patients, appointments, visits, drugs, invoices, payments, packages, staff roles, audit logs.
 
 create extension if not exists pgcrypto;
 
@@ -275,6 +275,25 @@ create table if not exists procedures (
 );
 
 -- ========== SYSTEM ==========
+-- Staff profiles are linked to Supabase Auth users.
+-- ใช้ email เป็น field หลักแทน display_name เพื่อให้ตรงกับ login identity.
+create table if not exists staff_profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text unique,
+  role text not null check (role in ('admin','doctor','nurse','reception','pharmacy','cashier','viewer')),
+  active boolean default true,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+-- Migration safety: ถ้ามีตาราง staff_profiles เดิมอยู่แล้ว ให้เติม email ได้
+alter table staff_profiles add column if not exists email text;
+alter table staff_profiles add column if not exists updated_at timestamptz default now();
+
+create unique index if not exists staff_profiles_email_unique_idx
+on staff_profiles(lower(email))
+where email is not null;
+
 create table if not exists audit_logs (
   id uuid primary key default gen_random_uuid(),
   actor_id uuid,
@@ -305,6 +324,9 @@ create trigger trg_visits_updated_at before update on visits for each row execut
 
 drop trigger if exists trg_drugs_updated_at on drugs;
 create trigger trg_drugs_updated_at before update on drugs for each row execute function set_updated_at();
+
+drop trigger if exists trg_staff_profiles_updated_at on staff_profiles;
+create trigger trg_staff_profiles_updated_at before update on staff_profiles for each row execute function set_updated_at();
 
 -- Simple stock deduction when prescription is created.
 create or replace function dispense_drug_from_prescription()
@@ -338,6 +360,7 @@ alter table invoice_items enable row level security;
 alter table payments enable row level security;
 alter table patient_packages enable row level security;
 alter table procedures enable row level security;
+alter table staff_profiles enable row level security;
 alter table audit_logs enable row level security;
 
 create or replace function create_dev_policy(table_name text) returns void language plpgsql as $$
@@ -363,4 +386,5 @@ select create_dev_policy('invoice_items');
 select create_dev_policy('payments');
 select create_dev_policy('patient_packages');
 select create_dev_policy('procedures');
+select create_dev_policy('staff_profiles');
 select create_dev_policy('audit_logs');
