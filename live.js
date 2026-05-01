@@ -1,0 +1,1 @@
+document.getElementById('app').innerHTML='<div class="card"><h1>Vision One Live</h1><p>Live app loading...</p></div>';
