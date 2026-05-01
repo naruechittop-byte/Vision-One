@@ -1,6 +1,7 @@
 -- Vision One — 00 Create Staff Profiles Table
 -- รันไฟล์นี้ก่อน create_staff_profiles_example.sql และก่อน rls_production.sql
 -- ใช้สำหรับสร้างตาราง staff_profiles ที่ผูกกับ Supabase Auth users
+-- Updated: ใช้ email เป็น field หลักแทน display_name
 
 -- ลำดับที่ถูกต้อง:
 -- 1) supabase/schema.sql
@@ -11,7 +12,7 @@
 
 create table if not exists public.staff_profiles (
   id uuid primary key references auth.users(id) on delete cascade,
-  display_name text not null,
+  email text unique,
   role text not null check (role in (
     'admin',
     'doctor',
@@ -25,6 +26,27 @@ create table if not exists public.staff_profiles (
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+
+-- Migration safety: ถ้าตารางเคยถูกสร้างด้วย display_name มาก่อน ให้เพิ่ม email เข้าไป
+alter table public.staff_profiles
+  add column if not exists email text;
+
+-- ถ้ามี display_name เดิมและยังไม่มี email ให้ copy ค่าเดิมมาก่อนชั่วคราว
+-- หลังจากนั้นควร update เป็น email จริงของ staff
+update public.staff_profiles
+set email = display_name
+where email is null
+  and exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'staff_profiles'
+      and column_name = 'display_name'
+  );
+
+create unique index if not exists staff_profiles_email_unique_idx
+on public.staff_profiles(lower(email))
+where email is not null;
 
 alter table public.staff_profiles enable row level security;
 
@@ -60,7 +82,4 @@ using (
   )
 );
 
--- Admin bootstrap insert/update จะทำผ่าน SQL Editor โดยใช้ service role/postgres
--- ไม่ต้องสร้าง insert policy สำหรับ frontend ในขั้นนี้
-
-select 'staff_profiles table is ready' as status;
+select 'staff_profiles table is ready with email field' as status;
