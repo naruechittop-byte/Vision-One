@@ -1,1 +1,1 @@
-{"rewrites":[{"source":"/","destination":"/app-easy.html"}]}
+{"rewrites":[{"source":"/","destination":"/app-netlify.html"},{"source":"/.netlify/functions/config","destination":"/api/config"}]}
