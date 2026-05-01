@@ -1,0 +1,66 @@
+-- Vision One — 00 Create Staff Profiles Table
+-- รันไฟล์นี้ก่อน create_staff_profiles_example.sql และก่อน rls_production.sql
+-- ใช้สำหรับสร้างตาราง staff_profiles ที่ผูกกับ Supabase Auth users
+
+-- ลำดับที่ถูกต้อง:
+-- 1) supabase/schema.sql
+-- 2) supabase/00_create_staff_profiles.sql
+-- 3) สร้าง user ใน Supabase Auth
+-- 4) supabase/create_staff_profiles_example.sql
+-- 5) supabase/rls_production.sql
+
+create table if not exists public.staff_profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  display_name text not null,
+  role text not null check (role in (
+    'admin',
+    'doctor',
+    'nurse',
+    'reception',
+    'pharmacy',
+    'cashier',
+    'viewer'
+  )),
+  active boolean default true,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table public.staff_profiles enable row level security;
+
+-- updated_at helper เผื่อ schema หลักยังไม่ได้สร้าง function นี้
+create or replace function public.set_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end; $$;
+
+drop trigger if exists trg_staff_profiles_updated_at on public.staff_profiles;
+create trigger trg_staff_profiles_updated_at
+before update on public.staff_profiles
+for each row execute function public.set_updated_at();
+
+-- Bootstrap policy ชั่วคราวสำหรับให้ staff อ่าน profile ตัวเองได้
+-- หลังจากรัน rls_production.sql แล้ว policy หลักจะเข้ามาคุมละเอียดขึ้น
+
+drop policy if exists "staff_can_read_self" on public.staff_profiles;
+create policy "staff_can_read_self"
+on public.staff_profiles
+for select
+to authenticated
+using (
+  id = auth.uid()
+  or exists (
+    select 1
+    from public.staff_profiles sp
+    where sp.id = auth.uid()
+      and sp.role = 'admin'
+      and sp.active = true
+  )
+);
+
+-- Admin bootstrap insert/update จะทำผ่าน SQL Editor โดยใช้ service role/postgres
+-- ไม่ต้องสร้าง insert policy สำหรับ frontend ในขั้นนี้
+
+select 'staff_profiles table is ready' as status;
